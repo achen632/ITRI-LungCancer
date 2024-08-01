@@ -1,4 +1,4 @@
-keys.txt
+/keys.txt
 /dataset
 /env
 /runs
@@ -7,4 +7,7 @@ keys.txt
 /NN Practice
 /dataset_>300
 /dataset_original
-yolov8n.pt
+/yolov8n.pt
+/dataset_8000
+/sample_out
+/dataset_big
