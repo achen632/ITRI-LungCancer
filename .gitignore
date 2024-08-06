@@ -13,3 +13,7 @@
 /dataset_big
 /dataset_slimjim
 /dataset_classify
+.ipynb_checkpoints/
+dataset_classify_rgb/
+dataset_rgb/
+YOLO
