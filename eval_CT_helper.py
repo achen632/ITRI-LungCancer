@@ -28,26 +28,12 @@ def draw_boxes(outpath, name, result, ann):
     image = result.orig_img
     
     for box in result.boxes.xywh:
-        x_center, y_center, width, height = box.tolist()
-
-        # x1 = int(x_center - width / 2)
-        # y1 = int(y_center - height / 2)
-        # x2 = int(x_center + width / 2)
-        # y2 = int(y_center + height / 2)
-        
-        cv2.circle(image, (int(x_center), int(y_center)), 15, (0, 255, 0), 2)
-        
-        # cv2.rectangle(image, (x1, y1), (x2, y2), (0, 255, 0), 1)
-    
+        x, y, width, height = box.tolist()
+        cv2.circle(image, (int(x+width/2), int(y+height/2)), 15, (0, 255, 0), 2)
     if len(ann) > 0:
-        # x_all = []
-        # y_all = []
         for a in ann:
-            x, y, z = a.centroid
-            # x_all.append(int(x))
-            # y_all.append(int(y))
-            cv2.circle(image, (int(y), int(x)), 25, (0, 0, 255), 2)
-        # cv2.circle(image, (int(np.mean(y_all)), int(np.mean(x_all))), 15, (0, 0, 255), 2)
+            y, x, z = a.centroid
+            cv2.circle(image, (int(x), int(y)), 25, (0, 0, 255), 2)
         
     cv2.imwrite(f'{outpath}/{name}.jpg', image)
     
@@ -113,9 +99,14 @@ def get_last_slice(index, boxes, ref):
 
 # Returns number of slices that contain a box similar to the reference box
 def get_num_slices(index, boxes, ref):
+    range = get_slice_range(index, boxes, ref)
+    return range[1]-range[0]+1
+
+# Returns tuple of first and last slices that contain a box similar to the reference box
+def get_slice_range(index, boxes, ref):
     first = get_first_slice(index-1, boxes, ref)
     last = get_last_slice(index+1, boxes, ref)
-    return last-first+1
+    return [first, last]
 
 # Returns the max number of contiguous slices that has a matching box
 def get_num_relevant_slices(index, boxes):
@@ -145,3 +136,22 @@ def ann_to_bbox(ann):
     w_avg = int(sum(w)/len(w))
     h_avg = int(sum(h)/len(h))
     return [[x_avg, y_avg, w_avg, h_avg]]
+
+# Represents nodule as tuple and adds to set
+def add_nodule(set, range, bbox):
+    for n in set:
+        if compare_boxes(n[1], bbox):
+            return
+    nod = (tuple(range), tuple(bbox))
+    set.add(nod)
+
+#
+def get_nodules(indices, preds_filtered):
+    nodules = set()
+    for i, (index, pred) in enumerate(zip(indices, preds_filtered)):
+        for bbox in pred:
+            range = get_slice_range(i, preds_filtered, bbox)
+            if range[1]-range[0] != 0:
+                corrected_range = range[0]-i+index, range[1]-i+index
+                add_nodule(nodules, corrected_range, bbox)
+    return nodules
