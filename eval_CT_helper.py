@@ -2,7 +2,7 @@ import pylidc as pl
 import cv2
 
 # Return annotations
-def get_ann_from_slice(patient_id, slice_location):
+def get_anns_from_slice(patient_id, slice_location):
     # Fetch the scan for the patient
     scan = pl.query(pl.Scan).filter(pl.Scan.patient_id == patient_id).first()
     if not scan:
@@ -38,7 +38,7 @@ def draw_boxes(outpath, name, result, ann):
     cv2.imwrite(f'{outpath}/{name}.jpg', image)
     
 # Returns bounding box from result
-def getBoundingBox(result):
+def getBBoxes(result):
     boxes = []
     for coords in result.boxes.xywh.tolist():
         x = int(coords[0])
@@ -47,6 +47,11 @@ def getBoundingBox(result):
         h = int(coords[3])
         boxes.append([x, y, w, h])
     return boxes
+
+# Returns class from result
+# def getClasses(result):
+#     classes = []
+#     for 
 
 # Returns if two bounding boxes are the same
 def compare_boxes(box1, box2):
@@ -145,7 +150,7 @@ def add_nodule(set, range, bbox):
     nod = (tuple(range), tuple(bbox))
     set.add(nod)
 
-#
+# Returns a set of nodules with range of relevant slices and bbox
 def get_nodules(indices, preds_filtered):
     nodules = set()
     for i, (index, pred) in enumerate(zip(indices, preds_filtered)):
@@ -155,3 +160,70 @@ def get_nodules(indices, preds_filtered):
                 corrected_range = range[0]-i+index, range[1]-i+index
                 add_nodule(nodules, corrected_range, bbox)
     return nodules
+
+# Classifies annotations as benign or malignant (0 or 1) by averaging the radiologists' ratings
+def get_class_from_anns(i, anns):
+    if anns == []:
+        return None
+    sum = 0
+    for ann in anns:
+        sum += ann.malignancy
+    return (i+1, sum / len(anns) > 3)
+
+# Adds annotation class to list of classes, recording slice index
+def add_cls_from_anns(classifications, i, anns):
+    cls = get_class_from_anns(i, anns)
+    if cls != None:
+        classifications.append(cls)
+        
+# Calculates the length of overlap between two ranges
+def overlap_len(r1, r2):
+    start1, end1 = r1
+    start2, end2 = r2
+    length1 = end1 - start1
+    length2 = end2 - start2
+    overlap_start = max(start1, start2)
+    overlap_end = min(end1, end2)
+    overlap_length = max(0, overlap_end - overlap_start)
+    return overlap_length
+
+# Returns if two nodules are equal
+def nods_equal(nod1, nod2):
+    box_same = compare_boxes(nod1[1], nod2[1])
+    slices_same = overlap_len(nod1[0], nod2[0]) >= 2
+    return box_same and slices_same
+
+# Returns the size of the union between two sets
+def num_union(p_nods, l_nods):
+    count = 0
+    for a in p_nods:
+        for b in l_nods:
+            if nods_equal(a, b):
+                count += 1
+    return count
+
+# Returns data used for eval metrics
+def tp_fp_fn(p_nods, l_nods):
+    tp = num_union(p_nods, l_nods)
+    fp = len(p_nods) - tp
+    fn = len(l_nods) - tp
+    return tp, fp, fn
+
+def precision(p_nods, l_nods):
+    tp, fp, fn = tp_fp_fn(p_nods, l_nods)
+    return tp / (tp + fp)
+
+def recall(p_nods, l_nods):
+    tp, fp, fn = tp_fp_fn(p_nods, l_nods)
+    return tp / (tp + fn)
+
+def f1(p_nods, l_nods):
+    prec = precision(p_nods, l_nods)
+    rec = recall(p_nods, l_nods)
+    return 2 * (prec * rec) / (prec + rec)
+
+def get_metrics(p_nods, l_nods):
+    prec = precision(p_nods, l_nods)
+    rec = recall(p_nods, l_nods)
+    f1_score = f1(p_nods, l_nods)
+    return prec, rec, f1_score
