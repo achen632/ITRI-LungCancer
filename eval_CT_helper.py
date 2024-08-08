@@ -48,11 +48,6 @@ def getBBoxes(result):
         boxes.append([x, y, w, h])
     return boxes
 
-# Returns class from result
-# def getClasses(result):
-#     classes = []
-#     for 
-
 # Returns if two bounding boxes are the same
 def compare_boxes(box1, box2):
     thresh = 15
