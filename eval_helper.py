@@ -4,17 +4,16 @@ from azure.storage.blob import BlobServiceClient
 from pydicom import dcmread
 from io import BytesIO
 import numpy as np
+import matplotlib.pyplot as plt
 
-# Return annotations
+# Return annotations based on patient_id and slice_location
 def get_anns_from_slice(patient_id, slice_location):
     # Fetch the scan for the patient
     scan = pl.query(pl.Scan).filter(pl.Scan.patient_id == patient_id).first()
     if not scan:
         raise ValueError(f"No scan found for patient ID {patient_id}")
-
     # Initialize list to store annotations
     annotations = []
-
     # Iterate over all annotations in the scan
     for ann in scan.annotations:
         for contour in ann.contours:
@@ -22,15 +21,18 @@ def get_anns_from_slice(patient_id, slice_location):
             if abs(contour.image_z_position - slice_location) < scan.slice_spacing:
                 annotations.append(ann)
                 break
-
     return annotations
 
 def isNodule(result):
     return len(result.boxes.xywh.tolist()) > 0
 
-def draw_boxes(outpath, name, result, ann):
-    image = result.orig_img
+# Draws predicted and labelled bboxes on image and saves
+def draw_boxes(filename, result, ann):
+    # Dont draw if no nodules in either result or ann
+    if not isNodule(result) and len(ann) == 0:
+        return
     
+    image = result.orig_img
     for box in result.boxes.xywh:
         x, y, width, height = box.tolist()
         cv2.circle(image, (int(x+width/2), int(y+height/2)), 15, (0, 255, 0), 2)
@@ -38,9 +40,8 @@ def draw_boxes(outpath, name, result, ann):
         for a in ann:
             y, x, z = a.centroid
             cv2.circle(image, (int(x), int(y)), 25, (0, 0, 255), 2)
-        
-    cv2.imwrite(f'{outpath}/{name}.jpg', image)
-    
+    cv2.imwrite(filename, image)
+
 # Returns bounding box from result
 def getBBoxes(result):
     boxes = []
@@ -208,24 +209,39 @@ def tp_fp_fn(p_nods, l_nods):
     fn = len(l_nods) - tp
     return tp, fp, fn
 
-def precision(p_nods, l_nods):
-    tp, fp, fn = tp_fp_fn(p_nods, l_nods)
+def precision(tp, fp, fn):
     return tp / (tp + fp)
 
-def recall(p_nods, l_nods):
-    tp, fp, fn = tp_fp_fn(p_nods, l_nods)
+def recall(tp, fp, fn):
     return tp / (tp + fn)
 
-def f1(p_nods, l_nods):
-    prec = precision(p_nods, l_nods)
-    rec = recall(p_nods, l_nods)
+def f1(prec, rec):
+    if prec + rec == 0:
+        return 0
     return 2 * (prec * rec) / (prec + rec)
 
 # Returns evaluation metrics
 def get_metrics(p_nods, l_nods):
-    prec = precision(p_nods, l_nods)
-    rec = recall(p_nods, l_nods)
-    f1_score = f1(p_nods, l_nods)
+    tp, fp, fn = tp_fp_fn(p_nods, l_nods)
+    prec = precision(tp, fp, fn)
+    rec = recall(tp, fp, fn)
+    f1_score = f1(prec, rec)
+    return prec, rec, f1_score
+
+# Evaluate results
+def evaluate(results):
+    tp = 0
+    fp = 0
+    fn = 0
+    for res in results:
+        p_nods, l_nods = res
+        metrics = help.tp_fp_fn(p_nods, l_nods)
+        tp += metrics[0]
+        fp += metrics[1]
+        fn += metrics[2]
+    prec = help.precision(tp, fp, fn)
+    rec = help.recall(tp, fp, fn)
+    f1_score = help.f1(prec, rec)
     return prec, rec, f1_score
 
 # Retrieves DICOM file from Azure Blob Storage
@@ -288,3 +304,35 @@ def get_context_imgs(blob_container_client, blob_name):
     image_prev = get_image_from_blob(blob_container_client, change_file_num(blob_name, -2))
     image_next = get_image_from_blob(blob_container_client, change_file_num(blob_name, 2))
     return image_prev, image_next
+
+# Plots nodules on histogram and saves to out_path
+def save_histogram(out_path, indices, preds_filtered, labels_filtered, patient_id):
+    # Check for empty lists
+    if indices == []:
+        return
+    
+    # Determines max y value to show on graph
+    y_min = indices[0]
+    y_max = indices[-1]
+
+    # Create an array of zeros for the range 0-200
+    pred_presence = [0] * (y_max-y_min)
+    label_presence = [0] * (y_max-y_min)
+
+    # Mark presence of each value in the list
+    for i, pred, label in zip(indices, preds_filtered, labels_filtered):
+        if pred != []:
+            pred_presence[i-y_max] = 1
+        if label != []:
+            label_presence[i-y_max] = 1
+
+    # Plot
+    plt.figure(figsize=(6, 3))
+    plt.bar(range(y_min, y_max), label_presence, width=1.0, alpha=.5, label='Label')
+    plt.bar(range(y_min, y_max), pred_presence, width=1.0, alpha=.5, label='Prediction')
+    plt.xlabel('Slice Num')
+    plt.ylabel('Nodule Presence (1 if present, 0 if not)')
+    plt.title(f'Labeled and Predicted Nodules from slices {y_min} to {y_max} for {patient_id}')
+    plt.xticks(range(y_min, y_max, 10))
+    plt.legend()
+    plt.savefig(f'{out_path}/{patient_id}.png')
