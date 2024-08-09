@@ -2,7 +2,6 @@
 /dataset
 /env
 /runs
-/YOLO
 /sample
 /NN Practice
 /dataset_>300
@@ -13,7 +12,9 @@
 /dataset_big
 /dataset_slimjim
 /dataset_classify
-.ipynb_checkpoints/
-dataset_classify_rgb/
-dataset_rgb/
-YOLO
+.ipynb_checkpoints
+/dataset_classify_rgb
+/dataset_rgb
+/outputs
+/__pycache__
+/YOLO
