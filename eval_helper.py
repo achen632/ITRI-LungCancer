@@ -55,7 +55,7 @@ def getBBoxes(result):
 
 # Returns if two bounding boxes are the same
 def compare_boxes(box1, box2):
-    thresh = 15
+    thresh = 25
     return (abs(box1[0]-box2[0]) < thresh and
             abs(box1[1]-box2[1]) < thresh and
             abs(box1[2]-box2[2]) < thresh and
@@ -180,8 +180,6 @@ def add_cls_from_anns(classifications, i, anns):
 def overlap_len(r1, r2):
     start1, end1 = r1
     start2, end2 = r2
-    length1 = end1 - start1
-    length2 = end2 - start2
     overlap_start = max(start1, start2)
     overlap_end = min(end1, end2)
     overlap_length = max(0, overlap_end - overlap_start)
@@ -235,13 +233,13 @@ def evaluate(results):
     fn = 0
     for res in results:
         p_nods, l_nods = res
-        metrics = help.tp_fp_fn(p_nods, l_nods)
+        metrics = tp_fp_fn(p_nods, l_nods)
         tp += metrics[0]
         fp += metrics[1]
         fn += metrics[2]
-    prec = help.precision(tp, fp, fn)
-    rec = help.recall(tp, fp, fn)
-    f1_score = help.f1(prec, rec)
+    prec = precision(tp, fp, fn)
+    rec = recall(tp, fp, fn)
+    f1_score = f1(prec, rec)
     return prec, rec, f1_score
 
 # Retrieves DICOM file from Azure Blob Storage
@@ -308,7 +306,7 @@ def get_context_imgs(blob_container_client, blob_name):
 # Plots nodules on histogram and saves to out_path
 def save_histogram(out_path, indices, preds_filtered, labels_filtered, patient_id):
     # Check for empty lists
-    if indices == []:
+    if len(indices) <= 1:
         return
     
     # Determines max y value to show on graph
@@ -331,8 +329,11 @@ def save_histogram(out_path, indices, preds_filtered, labels_filtered, patient_i
     plt.bar(range(y_min, y_max), label_presence, width=1.0, alpha=.5, label='Label')
     plt.bar(range(y_min, y_max), pred_presence, width=1.0, alpha=.5, label='Prediction')
     plt.xlabel('Slice Num')
-    plt.ylabel('Nodule Presence (1 if present, 0 if not)')
-    plt.title(f'Labeled and Predicted Nodules from slices {y_min} to {y_max} for {patient_id}')
-    plt.xticks(range(y_min, y_max, 10))
+    plt.ylabel('Nodule Presence')
+    plt.title(f'Nodules from slices {y_min} to {y_max} for {patient_id}')
+    plt.xticks(range(y_min, y_max, round((y_max-y_min)/10)+1))
+    plt.yticks(range(0, 2, 1))
     plt.legend()
+    plt.tight_layout()
     plt.savefig(f'{out_path}/{patient_id}.png')
+    plt.close()
